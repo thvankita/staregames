@@ -1,23 +1,23 @@
-// backend/index.js
+
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const { Readability } = require('@mozilla/readability');
 const { JSDOM } = require('jsdom');
 const multer = require('multer');
-const pdf = require('pdf-parse'); // Fix pdf-parse import
+const pdf = require('pdf-parse'); 
 const http = require('http');
 const { Server } = require('socket.io');
 
 const app = express();
 
-// Allowed origins for CORS
+
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5175"
 ];
 
-// Configure CORS
+
 app.use(cors({
   origin: function(origin, callback) {
     if (!origin) return callback(null, true); 
@@ -31,7 +31,7 @@ app.use(cors({
 
 app.use(express.json());
 
-// Create HTTP server & Socket.IO server
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -40,7 +40,7 @@ const io = new Server(server, {
   }
 });
 
-// Multer setup for PDF uploads
+
 const upload = multer({ storage: multer.memoryStorage() });
 
 // In-memory session store
@@ -50,7 +50,7 @@ const sessions = new Map();
 
 // Create a new session
 app.post('/api/create-session', (req, res) => {
-  const sessionId = Math.random().toString(36).substring(7);
+  const sessionId = Math.random().toString(36).substring(7).toUpperCase();
   const { content, mode } = req.body;
   sessions.set(sessionId, { content, mode, users: [] });
   res.json({ sessionId });
@@ -58,8 +58,9 @@ app.post('/api/create-session', (req, res) => {
 
 // Get session data
 app.get('/api/session/:id', (req, res) => {
-  const session = sessions.get(req.params.id);
-  if (!session) return res.status(404).json({ error: 'Session not found' });
+  const sessionId = req.params.id.toUpperCase();
+  const session = sessions.get(sessionId);
+  if (!session) return res.status(404).json({ error: 'Session not found or expired' });
   res.json(session);
 });
 
@@ -71,9 +72,13 @@ app.post('/api/parse', async (req, res) => {
   try {
     const response = await axios.get(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
       },
-      timeout: 10000 // 10 seconds timeout
+      timeout: 15000 
     });
     
     if (typeof response.data !== 'string') {
@@ -140,25 +145,28 @@ app.post('/api/upload-pdf', upload.single('pdf'), async (req, res) => {
 // --- Socket.IO events ---
 io.on('connection', (socket) => {
   socket.on('join-session', ({ sessionId, userId }) => {
-    socket.join(sessionId);
-    const session = sessions.get(sessionId);
+    const sId = sessionId.toUpperCase();
+    socket.join(sId);
+    const session = sessions.get(sId);
     if (session) {
       session.users.push({ userId, status: 'here' });
-      io.to(sessionId).emit('user-joined', { userId });
+      io.to(sId).emit('user-joined', { userId });
     }
   });
 
   socket.on('status-change', ({ sessionId, userId, status }) => {
-    const session = sessions.get(sessionId);
+    const sId = sessionId.toUpperCase();
+    const session = sessions.get(sId);
     if (session) {
       const user = session.users.find(u => u.userId === userId);
       if (user) user.status = status;
-      io.to(sessionId).emit('status-updated', { userId, status });
+      io.to(sId).emit('status-updated', { userId, status });
     }
   });
 
   socket.on('finish-session', ({ sessionId, userId, stats }) => {
-    io.to(sessionId).emit('user-finished', { userId, stats });
+    const sId = sessionId.toUpperCase();
+    io.to(sId).emit('user-finished', { userId, stats });
   });
 });
 
